@@ -18,21 +18,33 @@ export default async function handler(req, res) {
 
     try {
         if (req.method === 'GET') {
-            // Read all vendors
-            const response = await fetch(SHEETDB_API);
-            const data = await response.json();
-            res.status(200).json(data);
+            // Read both sheets in parallel
+            const [sheet1Response, sheet2Response] = await Promise.all([
+                fetch(`${SHEETDB_API}?sheet=sheet1`),
+                fetch(`${SHEETDB_API}?sheet=sheet2`)
+            ]);
+
+            const sheet1Data = await sheet1Response.json();
+            const sheet2Data = await sheet2Response.json();
+
+            res.status(200).json({
+                sheet1: sheet1Data,
+                sheet2: sheet2Data
+            });
         }
         else if (req.method === 'PATCH') {
             // Update a specific vendor
-            const { originalSupplier, updateData } = req.body;
+            const { originalSupplier, updateData, sheetName } = req.body;
 
             if (!originalSupplier || !updateData) {
                 return res.status(400).json({ error: 'Missing required data' });
             }
 
+            // Default to sheet1 if not specified
+            const sheetParam = sheetName ? `?sheet=${sheetName}` : '';
+
             // Proxy the update to SheetDB
-            const response = await fetch(`${SHEETDB_API}/Supplier / Brand/${encodeURIComponent(originalSupplier)}`, {
+            const response = await fetch(`${SHEETDB_API}/Supplier / Brand/${encodeURIComponent(originalSupplier)}${sheetParam}`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json'

@@ -1,11 +1,14 @@
 // Vendor Earthworks - Card-Based Interactive Dashboard
-// Connected to Google Sheets via SheetDB API
+// Connected to Google Sheets via Vercel API Proxy
 // =====================================================
 
-const SHEETDB_API = '/api/vendors';
+const VERCEL_API = '/api/vendors';
+const SHEETDB_DIRECT = 'https://sheetdb.io/api/v1/crhv4u171vi50';
 
-let vendorData = [];
-let filteredData = [];
+let allData = { sheet1: [], sheet2: [] };
+let vendorData = []; // Currently displayed data
+let filteredData = []; // Data after search/filter
+let currentTab = 'sheet1';
 
 // Column mappings
 const columnMap = {
@@ -27,52 +30,113 @@ const columnMap = {
 document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     setupEventListeners();
-    renderCards();
 });
 
-// Load data from SheetDB API
-// Load data from SheetDB API
+// Load data from API (Vercel or Fallback)
 async function loadData() {
     showLoading(true);
 
     try {
-        const response = await fetch(SHEETDB_API);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        // 1. Try Vercel API (reads both sheets)
+        const response = await fetch(VERCEL_API);
+        if (response.ok) {
+            const data = await response.json();
+            // Expect { sheet1: [...], sheet2: [...] }
+            if (data.sheet1 && Array.isArray(data.sheet1)) {
+                allData = data;
+                initializeData();
+                return;
+            }
+        }
+    } catch (e) {
+        console.log('Vercel API failed (expected locally), trying direct fallback...', e);
+    }
 
-        const rawData = await response.json();
-        processData(rawData);
+    // 2. Fallback: Try direct SheetDB (for local testing mostly)
+    try {
+        const [sheet1Res, sheet2Res] = await Promise.all([
+            fetch(`${SHEETDB_DIRECT}?sheet=sheet1`),
+            fetch(`${SHEETDB_DIRECT}?sheet=sheet2`)
+        ]);
+
+        if (sheet1Res.ok && sheet2Res.ok) {
+            const sheet1Data = await sheet1Res.json();
+            const sheet2Data = await sheet2Res.json();
+            allData = {
+                sheet1: sheet1Data,
+                sheet2: sheet2Data
+            };
+            initializeData();
+            return;
+        }
+    } catch (e) {
+        console.log('Direct fallback failed, trying CORS proxy...', e);
+    }
+
+    // 3. Last Resort: CORS Proxy
+    try {
+        const proxy = 'https://api.allorigins.win/raw?url=';
+        const [sheet1Res, sheet2Res] = await Promise.all([
+            fetch(proxy + encodeURIComponent(`${SHEETDB_DIRECT}?sheet=sheet1`)),
+            fetch(proxy + encodeURIComponent(`${SHEETDB_DIRECT}?sheet=sheet2`))
+        ]);
+
+        const sheet1Data = await sheet1Res.json();
+        const sheet2Data = await sheet2Res.json();
+        allData = {
+            sheet1: sheet1Data,
+            sheet2: sheet2Data
+        };
+        initializeData();
     } catch (error) {
-        console.error('API failed:', error);
-
+        console.error('All methods failed:', error);
         showLoading(false);
         document.getElementById('cardsContainer').innerHTML = `
             <div class="no-results">
                 <div class="no-results-icon">⚠️</div>
                 <h3>Error loading data</h3>
-                <p>Could not load vendors from API. Please check connection.</p>
+                <p>Could not load vendors. Please check your connection.</p>
                 <button onclick="loadData()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer;">Retry</button>
             </div>
         `;
     }
 }
 
-// Process the raw API data
-function processData(rawData) {
-    // Transform data to use clean keys
-    vendorData = rawData.map(row => {
+// Initialize data after fetching
+function initializeData() {
+    // Update counts
+    document.getElementById('count-sheet1').textContent = allData.sheet1.length;
+    document.getElementById('count-sheet2').textContent = allData.sheet2.length;
+
+    // Switch to default tab
+    switchTab('sheet1');
+}
+
+// Switch Tab
+function switchTab(tabName) {
+    currentTab = tabName;
+
+    // Update UI tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+    });
+
+    // Process data for this tab
+    const rawSheetData = allData[tabName] || [];
+
+    vendorData = rawSheetData.map(row => {
         const transformed = {};
         for (const [originalKey, newKey] of Object.entries(columnMap)) {
             transformed[newKey] = row[originalKey] || '';
         }
-        // Keep original row for updates
+        // Keep original row and sheet name for updates
         transformed._original = row;
+        transformed._sheetName = tabName;
         return transformed;
     }).filter(v => v.supplier && v.supplier.trim() !== '');
 
-    // Update counts
     document.getElementById('totalVendors').textContent = vendorData.length;
 
-    // Populate filters
     populateFilters();
     showLoading(false);
     renderCards();
@@ -85,7 +149,7 @@ function showLoading(show) {
         container.innerHTML = `
             <div class="loading-state">
                 <div class="spinner"></div>
-                <p>Loading vendors from Google Sheet...</p>
+                <p>Loading vendors from Google Sheets...</p>
             </div>
         `;
     }
@@ -117,6 +181,14 @@ function populateFilters() {
 
 // Setup event listeners
 function setupEventListeners() {
+    // Tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
+            if (tab !== currentTab) switchTab(tab);
+        });
+    });
+
     // Search input
     const searchInput = document.getElementById('searchInput');
     const clearSearch = document.getElementById('clearSearch');
@@ -212,7 +284,7 @@ function renderCards() {
                         <span>${escapeHtml(truncate(vendor.location, 30) || 'N/A')}</span>
                     </div>
                 </div>
-                <span class="card-badge">Packaging</span>
+                <span class="card-badge">${currentTab === 'sheet1' ? 'Paper' : 'Bioplastic'}</span>
             </div>
             
             <div class="card-products">
@@ -268,7 +340,7 @@ function showVendorDetail(vendor, index) {
 
     modalContent.innerHTML = `
         <div class="modal-header">
-            <span class="modal-badge">Packaging Vendor</span>
+            <span class="modal-badge">${currentTab === 'sheet1' ? 'Paper Packaging' : 'Bioplastic Packaging'}</span>
             <h2>${escapeHtml(vendor.supplier || 'Unknown Vendor')}</h2>
             <div class="modal-location">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -348,7 +420,7 @@ function openEditModal(index) {
 
     modalContent.innerHTML = `
         <div class="modal-header">
-            <span class="modal-badge edit-mode">Edit Mode</span>
+            <span class="modal-badge edit-mode">Edit Mode - ${currentTab}</span>
             <h2>Edit Vendor</h2>
         </div>
         
@@ -431,6 +503,7 @@ async function saveVendor(event, index) {
 
     const vendor = filteredData[index];
     const originalSupplier = vendor._original['Supplier / Brand'];
+    const sheetName = vendor._sheetName;
 
     // Build update data
     const updateData = {
@@ -450,21 +523,24 @@ async function saveVendor(event, index) {
 
     let saved = false;
 
-    // Try Vercel API (proxies to SheetDB)
+    // Try Vercel API
     try {
-        const response = await fetch(SHEETDB_API, {
+        const response = await fetch(VERCEL_API, {
             method: 'PATCH',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 originalSupplier: originalSupplier,
-                updateData: updateData
+                updateData: updateData,
+                sheetName: sheetName
             })
         });
 
         if (response.ok) {
             saved = true;
+        } else {
+            console.log('API Error:', await response.text());
         }
     } catch (error) {
         console.log('API PATCH failed:', error);
@@ -472,48 +548,21 @@ async function saveVendor(event, index) {
 
     if (saved) {
         // Update local data
-        for (const [key, value] of Object.entries(updateData)) {
-            vendor._original[key] = value;
-        }
-
-        // Update transformed data
-        vendor.supplier = form.supplier.value;
-        vendor.location = form.location.value;
-        vendor.products = form.products.value;
-        vendor.gsm = form.gsm.value;
-        vendor.coating = form.coating.value;
-        vendor.dishes = form.dishes.value;
-        vendor.price = form.price.value;
-        vendor.capacity = form.capacity.value;
-        vendor.moq = form.moq.value;
-        vendor.customization = form.customization.value;
-        vendor.clients = form.clients.value;
-        vendor.usp = form.usp.value;
-
+        updateLocalData(vendor, updateData, form);
         showNotification('Vendor updated successfully!', 'success');
         renderCards();
         showVendorDetail(vendor, index);
     } else {
-        // Update local data only (for this session)
-        vendor.supplier = form.supplier.value;
-        vendor.location = form.location.value;
-        vendor.products = form.products.value;
-        vendor.gsm = form.gsm.value;
-        vendor.coating = form.coating.value;
-        vendor.dishes = form.dishes.value;
-        vendor.price = form.price.value;
-        vendor.capacity = form.capacity.value;
-        vendor.moq = form.moq.value;
-        vendor.customization = form.customization.value;
-        vendor.clients = form.clients.value;
-        vendor.usp = form.usp.value;
+        // Fallback: Update local data only
+        updateLocalData(vendor, updateData, form);
+        console.warn('Update saved locally only. API call failed.');
 
-        // Update original too for consistency
-        for (const [key, value] of Object.entries(updateData)) {
-            vendor._original[key] = value;
+        let msg = 'Changes saved locally! Push to Vercel for permanent updates.';
+        if (window.location.hostname.includes('vercel.app')) {
+            msg = 'Failed to save to Google Sheet. Please try again.';
         }
 
-        showNotification('Changes saved locally! To update Google Sheet, edit directly in the spreadsheet.', 'warning');
+        showNotification(msg, 'warning');
         renderCards();
         showVendorDetail(vendor, index);
     }
@@ -521,6 +570,27 @@ async function saveVendor(event, index) {
     btnText.style.display = 'inline';
     btnLoading.style.display = 'none';
     saveBtn.disabled = false;
+}
+
+function updateLocalData(vendor, updateData, form) {
+    // Update original object
+    for (const [key, value] of Object.entries(updateData)) {
+        vendor._original[key] = value;
+    }
+
+    // Update transformed properties
+    vendor.supplier = form.supplier.value;
+    vendor.location = form.location.value;
+    vendor.products = form.products.value;
+    vendor.gsm = form.gsm.value;
+    vendor.coating = form.coating.value;
+    vendor.dishes = form.dishes.value;
+    vendor.price = form.price.value;
+    vendor.capacity = form.capacity.value;
+    vendor.moq = form.moq.value;
+    vendor.customization = form.customization.value;
+    vendor.clients = form.clients.value;
+    vendor.usp = form.usp.value;
 }
 
 // Show notification

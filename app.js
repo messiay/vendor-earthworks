@@ -5,10 +5,10 @@
 const VERCEL_API = '/api/vendors';
 const SHEETDB_DIRECT = 'https://sheetdb.io/api/v1/crhv4u171vi50';
 
-let allData = { sheet1: [], sheet2: [] };
+let allData = { Sheet1: [], Sheet2: [] }; // Capitalized Keys
 let vendorData = []; // Currently displayed data
 let filteredData = []; // Data after search/filter
-let currentTab = 'sheet1';
+let currentTab = 'Sheet1'; // Default tab
 
 // Column mappings
 const columnMap = {
@@ -41,9 +41,12 @@ async function loadData() {
         const response = await fetch(VERCEL_API);
         if (response.ok) {
             const data = await response.json();
-            // Expect { sheet1: [...], sheet2: [...] }
-            if (data.sheet1 && Array.isArray(data.sheet1)) {
-                allData = data;
+            // Expect { Sheet1: [...], Sheet2: [...] }
+            if (data.Sheet1 || data.Sheet2) {
+                allData = {
+                    Sheet1: data.Sheet1 || [],
+                    Sheet2: data.Sheet2 || []
+                };
                 initializeData();
                 return;
             }
@@ -55,16 +58,16 @@ async function loadData() {
     // 2. Fallback: Try direct SheetDB (for local testing mostly)
     try {
         const [sheet1Res, sheet2Res] = await Promise.all([
-            fetch(`${SHEETDB_DIRECT}?sheet=sheet1`),
-            fetch(`${SHEETDB_DIRECT}?sheet=sheet2`)
+            fetch(`${SHEETDB_DIRECT}?sheet=Sheet1`),
+            fetch(`${SHEETDB_DIRECT}?sheet=Sheet2`)
         ]);
 
         if (sheet1Res.ok && sheet2Res.ok) {
             const sheet1Data = await sheet1Res.json();
             const sheet2Data = await sheet2Res.json();
             allData = {
-                sheet1: sheet1Data,
-                sheet2: sheet2Data
+                Sheet1: sheet1Data,
+                Sheet2: sheet2Data
             };
             initializeData();
             return;
@@ -77,15 +80,15 @@ async function loadData() {
     try {
         const proxy = 'https://api.allorigins.win/raw?url=';
         const [sheet1Res, sheet2Res] = await Promise.all([
-            fetch(proxy + encodeURIComponent(`${SHEETDB_DIRECT}?sheet=sheet1`)),
-            fetch(proxy + encodeURIComponent(`${SHEETDB_DIRECT}?sheet=sheet2`))
+            fetch(proxy + encodeURIComponent(`${SHEETDB_DIRECT}?sheet=Sheet1`)),
+            fetch(proxy + encodeURIComponent(`${SHEETDB_DIRECT}?sheet=Sheet2`))
         ]);
 
         const sheet1Data = await sheet1Res.json();
         const sheet2Data = await sheet2Res.json();
         allData = {
-            sheet1: sheet1Data,
-            sheet2: sheet2Data
+            Sheet1: sheet1Data,
+            Sheet2: sheet2Data
         };
         initializeData();
     } catch (error) {
@@ -105,11 +108,13 @@ async function loadData() {
 // Initialize data after fetching
 function initializeData() {
     // Update counts
-    document.getElementById('count-sheet1').textContent = allData.sheet1.length;
-    document.getElementById('count-sheet2').textContent = allData.sheet2.length;
+    const count1 = document.getElementById('count-Sheet1');
+    const count2 = document.getElementById('count-Sheet2');
+    if (count1) count1.textContent = allData.Sheet1.length;
+    if (count2) count2.textContent = allData.Sheet2.length;
 
     // Switch to default tab
-    switchTab('sheet1');
+    switchTab('Sheet1');
 }
 
 // Switch Tab
@@ -263,13 +268,13 @@ function renderCards() {
     const noResults = document.getElementById('noResults');
 
     if (filteredData.length === 0) {
-        container.style.display = 'none';
-        noResults.style.display = 'block';
+        if (container) container.style.display = 'none';
+        if (noResults) noResults.style.display = 'block';
         return;
     }
 
-    container.style.display = 'grid';
-    noResults.style.display = 'none';
+    if (container) container.style.display = 'grid';
+    if (noResults) noResults.style.display = 'none';
 
     container.innerHTML = filteredData.map((vendor, index) => `
         <div class="vendor-card" style="--card-index: ${index}" data-index="${index}">
@@ -284,7 +289,7 @@ function renderCards() {
                         <span>${escapeHtml(truncate(vendor.location, 30) || 'N/A')}</span>
                     </div>
                 </div>
-                <span class="card-badge">${currentTab === 'sheet1' ? 'Paper' : 'Bioplastic'}</span>
+                <span class="card-badge">${currentTab === 'Sheet1' ? 'Paper' : 'Bioplastic'}</span>
             </div>
             
             <div class="card-products">
@@ -340,7 +345,7 @@ function showVendorDetail(vendor, index) {
 
     modalContent.innerHTML = `
         <div class="modal-header">
-            <span class="modal-badge">${currentTab === 'sheet1' ? 'Paper Packaging' : 'Bioplastic Packaging'}</span>
+            <span class="modal-badge">${currentTab === 'Sheet1' ? 'Paper Packaging' : 'Bioplastic Packaging'}</span>
             <h2>${escapeHtml(vendor.supplier || 'Unknown Vendor')}</h2>
             <div class="modal-location">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -559,7 +564,7 @@ async function saveVendor(event, index) {
 
         let msg = 'Changes saved locally! Push to Vercel for permanent updates.';
         if (window.location.hostname.includes('vercel.app')) {
-            msg = 'Failed to save to Google Sheet. Please try again.';
+            msg = 'Failed to update Google Sheet. Try checking sheet names (Sheet1/Sheet2).';
         }
 
         showNotification(msg, 'warning');

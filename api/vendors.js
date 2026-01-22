@@ -19,17 +19,22 @@ export default async function handler(req, res) {
     try {
         if (req.method === 'GET') {
             // Read both sheets in parallel
+            // Note: Sheet names are case-sensitive in Google Sheets
             const [sheet1Response, sheet2Response] = await Promise.all([
-                fetch(`${SHEETDB_API}?sheet=sheet1`),
-                fetch(`${SHEETDB_API}?sheet=sheet2`)
+                fetch(`${SHEETDB_API}?sheet=Sheet1`),
+                fetch(`${SHEETDB_API}?sheet=Sheet2`)
             ]);
 
             const sheet1Data = await sheet1Response.json();
             const sheet2Data = await sheet2Response.json();
 
+            // Handle case where specific sheet fetch fails (returns array of all or error)
+            // SheetDB returns error object if sheet not found, or defaults.
+            // We'll normalize the response.
+
             res.status(200).json({
-                sheet1: sheet1Data,
-                sheet2: sheet2Data
+                Sheet1: Array.isArray(sheet1Data) ? sheet1Data : [],
+                Sheet2: Array.isArray(sheet2Data) ? sheet2Data : []
             });
         }
         else if (req.method === 'PATCH') {

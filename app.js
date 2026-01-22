@@ -32,40 +32,77 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Load data from SheetDB API
 async function loadData() {
+    showLoading(true);
+
+    // Try direct API first
     try {
-        showLoading(true);
-        const response = await fetch(SHEETDB_API);
-        const rawData = await response.json();
-
-        // Transform data to use clean keys
-        vendorData = rawData.map(row => {
-            const transformed = {};
-            for (const [originalKey, newKey] of Object.entries(columnMap)) {
-                transformed[newKey] = row[originalKey] || '';
+        const response = await fetch(SHEETDB_API, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
             }
-            // Keep original row for updates
-            transformed._original = row;
-            return transformed;
-        }).filter(v => v.supplier && v.supplier.trim() !== '');
+        });
 
-        // Update counts
-        document.getElementById('totalVendors').textContent = vendorData.length;
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
 
-        // Populate filters
-        populateFilters();
-        showLoading(false);
-
+        const rawData = await response.json();
+        processData(rawData);
+        return;
     } catch (error) {
-        console.error('Error loading data:', error);
-        showLoading(false);
-        document.getElementById('cardsContainer').innerHTML = `
-            <div class="no-results">
-                <div class="no-results-icon">⚠️</div>
-                <h3>Error loading data</h3>
-                <p>Could not connect to Google Sheet. Please check your connection.</p>
-            </div>
-        `;
+        console.log('Direct API failed, trying CORS proxy...', error);
     }
+
+    // Try with CORS proxy
+    try {
+        const corsProxy = 'https://api.allorigins.win/raw?url=';
+        const response = await fetch(corsProxy + encodeURIComponent(SHEETDB_API));
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const rawData = await response.json();
+        processData(rawData);
+        return;
+    } catch (error) {
+        console.error('CORS proxy also failed:', error);
+    }
+
+    // All methods failed
+    showLoading(false);
+    document.getElementById('cardsContainer').innerHTML = `
+        <div class="no-results">
+            <div class="no-results-icon">⚠️</div>
+            <h3>Error loading data</h3>
+            <p>Could not connect to Google Sheet. This may be due to CORS restrictions.</p>
+            <p style="margin-top: 1rem; font-size: 0.85rem;">Try opening in a new tab or deploying to a web server.</p>
+            <button onclick="loadData()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer;">Retry</button>
+        </div>
+    `;
+}
+
+// Process the raw API data
+function processData(rawData) {
+    // Transform data to use clean keys
+    vendorData = rawData.map(row => {
+        const transformed = {};
+        for (const [originalKey, newKey] of Object.entries(columnMap)) {
+            transformed[newKey] = row[originalKey] || '';
+        }
+        // Keep original row for updates
+        transformed._original = row;
+        return transformed;
+    }).filter(v => v.supplier && v.supplier.trim() !== '');
+
+    // Update counts
+    document.getElementById('totalVendors').textContent = vendorData.length;
+
+    // Populate filters
+    populateFilters();
+    showLoading(false);
+    renderCards();
 }
 
 // Show/hide loading state

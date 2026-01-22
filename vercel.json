@@ -1,0 +1,9 @@
+{
+    "version": 2,
+    "rewrites": [
+        {
+            "source": "/api/vendors",
+            "destination": "/api/vendors.js"
+        }
+    ]
+}

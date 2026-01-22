@@ -2,7 +2,7 @@
 // Connected to Google Sheets via SheetDB API
 // =====================================================
 
-const SHEETDB_API = 'https://sheetdb.io/api/v1/crhv4u171vi50';
+const SHEETDB_API = '/api/vendors';
 
 let vendorData = [];
 let filteredData = [];
@@ -31,56 +31,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Load data from SheetDB API
+// Load data from SheetDB API
 async function loadData() {
     showLoading(true);
 
-    // Try direct API first
     try {
-        const response = await fetch(SHEETDB_API, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
+        const response = await fetch(SHEETDB_API);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const rawData = await response.json();
         processData(rawData);
-        return;
     } catch (error) {
-        console.log('Direct API failed, trying CORS proxy...', error);
+        console.error('API failed:', error);
+
+        showLoading(false);
+        document.getElementById('cardsContainer').innerHTML = `
+            <div class="no-results">
+                <div class="no-results-icon">⚠️</div>
+                <h3>Error loading data</h3>
+                <p>Could not load vendors from API. Please check connection.</p>
+                <button onclick="loadData()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer;">Retry</button>
+            </div>
+        `;
     }
-
-    // Try with CORS proxy
-    try {
-        const corsProxy = 'https://api.allorigins.win/raw?url=';
-        const response = await fetch(corsProxy + encodeURIComponent(SHEETDB_API));
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const rawData = await response.json();
-        processData(rawData);
-        return;
-    } catch (error) {
-        console.error('CORS proxy also failed:', error);
-    }
-
-    // All methods failed
-    showLoading(false);
-    document.getElementById('cardsContainer').innerHTML = `
-        <div class="no-results">
-            <div class="no-results-icon">⚠️</div>
-            <h3>Error loading data</h3>
-            <p>Could not connect to Google Sheet. This may be due to CORS restrictions.</p>
-            <p style="margin-top: 1rem; font-size: 0.85rem;">Try opening in a new tab or deploying to a web server.</p>
-            <button onclick="loadData()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer;">Retry</button>
-        </div>
-    `;
 }
 
 // Process the raw API data
@@ -475,50 +448,81 @@ async function saveVendor(event, index) {
         'USP / Differentiation': form.usp.value
     };
 
+    let saved = false;
+
+    // Try Vercel API (proxies to SheetDB)
     try {
-        // Update via SheetDB API
-        const response = await fetch(`${SHEETDB_API}/Supplier / Brand/${encodeURIComponent(originalSupplier)}`, {
+        const response = await fetch(SHEETDB_API, {
             method: 'PATCH',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ data: updateData })
+            body: JSON.stringify({
+                originalSupplier: originalSupplier,
+                updateData: updateData
+            })
         });
 
         if (response.ok) {
-            // Update local data
-            for (const [key, value] of Object.entries(updateData)) {
-                vendor._original[key] = value;
-            }
-
-            // Update transformed data
-            vendor.supplier = form.supplier.value;
-            vendor.location = form.location.value;
-            vendor.products = form.products.value;
-            vendor.gsm = form.gsm.value;
-            vendor.coating = form.coating.value;
-            vendor.dishes = form.dishes.value;
-            vendor.price = form.price.value;
-            vendor.capacity = form.capacity.value;
-            vendor.moq = form.moq.value;
-            vendor.customization = form.customization.value;
-            vendor.clients = form.clients.value;
-            vendor.usp = form.usp.value;
-
-            // Show success and go back to detail view
-            showNotification('Vendor updated successfully!', 'success');
-            renderCards();
-            showVendorDetail(vendor, index);
-        } else {
-            throw new Error('Failed to update');
+            saved = true;
         }
     } catch (error) {
-        console.error('Error saving vendor:', error);
-        showNotification('Failed to save changes. Please try again.', 'error');
-    } finally {
-        btnText.style.display = 'inline';
-        btnLoading.style.display = 'none';
-        saveBtn.disabled = false;
+        console.log('API PATCH failed:', error);
+    }
+
+    if (saved) {
+        // Update local data
+        for (const [key, value] of Object.entries(updateData)) {
+            vendor._original[key] = value;
+        }
+
+        // Update transformed data
+        vendor.supplier = form.supplier.value;
+        vendor.location = form.location.value;
+        vendor.products = form.products.value;
+        vendor.gsm = form.gsm.value;
+        vendor.coating = form.coating.value;
+        vendor.dishes = form.dishes.value;
+        vendor.price = form.price.value;
+        vendor.capacity = form.capacity.value;
+        vendor.moq = form.moq.value;
+        vendor.customization = form.customization.value;
+        vendor.clients = form.clients.value;
+        vendor.usp = form.usp.value;
+
+        showNotification('Vendor updated successfully!', 'success');
+        renderCards();
+        showVendorDetail(vendor, index);
+    } else {
+        // Update local data only (for this session)
+        vendor.supplier = form.supplier.value;
+        vendor.location = form.location.value;
+        vendor.products = form.products.value;
+        vendor.gsm = form.gsm.value;
+        vendor.coating = form.coating.value;
+        vendor.dishes = form.dishes.value;
+        vendor.price = form.price.value;
+        vendor.capacity = form.capacity.value;
+        vendor.moq = form.moq.value;
+        vendor.customization = form.customization.value;
+        vendor.clients = form.clients.value;
+        vendor.usp = form.usp.value;
+
+        // Update original too for consistency
+        for (const [key, value] of Object.entries(updateData)) {
+            vendor._original[key] = value;
+        }
+
+        showNotification('Changes saved locally! To update Google Sheet, edit directly in the spreadsheet.', 'warning');
+        renderCards();
+        showVendorDetail(vendor, index);
+    }
+
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+    saveBtn.disabled = false;
+}
+saveBtn.disabled = false;
     }
 }
 

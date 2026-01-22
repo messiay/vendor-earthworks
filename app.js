@@ -522,9 +522,6 @@ async function saveVendor(event, index) {
     btnLoading.style.display = 'none';
     saveBtn.disabled = false;
 }
-saveBtn.disabled = false;
-    }
-}
 
 // Show notification
 function showNotification(message, type) {

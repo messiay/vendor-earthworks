@@ -77,27 +77,45 @@ export default async function handler(req, res) {
 
             // Proxy the update to SheetDB
             // URL: /api/v1/{id}?sheet=Sheet1&Product=...&GSM=...
-            const response = await fetch(`${SHEETDB_API}?sheet=${sheet}&${searchParam}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ data: updateData })
-            });
+            const sheetDbUrl = `${SHEETDB_API}?sheet=${sheet}&${searchParam}`;
 
-            const result = await response.json();
+            try {
+                const response = await fetch(sheetDbUrl, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ data: updateData })
+                });
 
-            // SheetDB returns { updated: 1 } on success
-            if (result.updated || result.data) {
-                res.status(200).json(result);
-            } else {
-                // Forward error if provided
-                // If 0 updated, it might mean the row wasn't found (mismatch)
-                if (result.updated === 0) {
-                    res.status(404).json({ error: 'Row not found. Data might have changed.' });
-                } else {
-                    res.status(400).json(result);
+                const responseText = await response.text();
+                let result;
+
+                try {
+                    result = JSON.parse(responseText);
+                } catch (e) {
+                    console.error('Failed to parse SheetDB response:', responseText);
+                    return res.status(502).json({
+                        error: 'Invalid response from backend',
+                        details: responseText.substring(0, 200)
+                    });
                 }
+
+                // SheetDB returns { updated: 1 } on success
+                if (response.ok && (result.updated || result.data)) {
+                    res.status(200).json(result);
+                } else {
+                    // Forward error if provided
+                    // If 0 updated, it might mean the row wasn't found (mismatch)
+                    if (result.updated === 0) {
+                        res.status(404).json({ error: 'Row not found. Data might have changed since loading.', details: 'Composite search matched 0 rows.' });
+                    } else {
+                        res.status(response.status || 400).json(result);
+                    }
+                }
+            } catch (networkError) {
+                console.error('Network request failed:', networkError);
+                return res.status(503).json({ error: 'Upstream connection failed', details: networkError.message });
             }
         }
         else {

@@ -46,17 +46,14 @@ export default async function handler(req, res) {
             }
 
             // Default to Sheet1 if not specified
-            const sheetParam = sheetName ? `?sheet=${sheetName}` : '';
+            const sheet = sheetName || 'Sheet1';
 
-            // Double encode the column name to handle the slash
-            // Supplier / Brand -> Supplier%20%2F%20Brand (First) -> Supplier%2520%252F%2520Brand (Second)
-            const encodedColumn = encodeURIComponent(encodeURIComponent('Supplier / Brand'));
-
-            // Also encode the value
-            const encodedValue = encodeURIComponent(originalSupplier);
+            // Use Query Parameter based update to handle special characters in column names
+            // URL: /api/v1/{id}?sheet=Sheet1&Supplier%20%2F%20Brand=Value
+            const searchParam = `${encodeURIComponent('Supplier / Brand')}=${encodeURIComponent(originalSupplier)}`;
 
             // Proxy the update to SheetDB
-            const response = await fetch(`${SHEETDB_API}/${encodedColumn}/${encodedValue}${sheetParam}`, {
+            const response = await fetch(`${SHEETDB_API}?sheet=${sheet}&${searchParam}`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json'

@@ -527,6 +527,7 @@ async function saveVendor(event, index) {
     };
 
     let saved = false;
+    let errorMessage = 'Failed to update Google Sheet. Please try again.';
 
     // Try Vercel API
     try {
@@ -545,10 +546,18 @@ async function saveVendor(event, index) {
         if (response.ok) {
             saved = true;
         } else {
-            console.log('API Error:', await response.text());
+            const errText = await response.text();
+            console.error('API Error:', errText);
+            try {
+                const errJson = JSON.parse(errText);
+                errorMessage = errJson.error || errorMessage;
+            } catch (e) {
+                errorMessage = `Error ${response.status}: ${errText}`;
+            }
         }
     } catch (error) {
-        console.log('API PATCH failed:', error);
+        console.error('API PATCH failed:', error);
+        errorMessage = 'Network error. Please check your connection.';
     }
 
     if (saved) {
@@ -558,18 +567,9 @@ async function saveVendor(event, index) {
         renderCards();
         showVendorDetail(vendor, index);
     } else {
-        // Fallback: Update local data only
-        updateLocalData(vendor, updateData, form);
-        console.warn('Update saved locally only. API call failed.');
-
-        let msg = 'Changes saved locally! Push to Vercel for permanent updates.';
-        if (window.location.hostname.includes('vercel.app')) {
-            msg = 'Failed to update Google Sheet. Try checking sheet names (Sheet1/Sheet2).';
-        }
-
-        showNotification(msg, 'warning');
-        renderCards();
-        showVendorDetail(vendor, index);
+        // Show error notification
+        showNotification(errorMessage, 'error');
+        console.warn('Update failed. Not saving locally.');
     }
 
     btnText.style.display = 'inline';

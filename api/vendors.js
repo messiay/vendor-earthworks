@@ -45,11 +45,18 @@ export default async function handler(req, res) {
                 return res.status(400).json({ error: 'Missing required data' });
             }
 
-            // Default to sheet1 if not specified
+            // Default to Sheet1 if not specified
             const sheetParam = sheetName ? `?sheet=${sheetName}` : '';
 
+            // Double encode the column name to handle the slash
+            // Supplier / Brand -> Supplier%20%2F%20Brand (First) -> Supplier%2520%252F%2520Brand (Second)
+            const encodedColumn = encodeURIComponent(encodeURIComponent('Supplier / Brand'));
+
+            // Also encode the value
+            const encodedValue = encodeURIComponent(originalSupplier);
+
             // Proxy the update to SheetDB
-            const response = await fetch(`${SHEETDB_API}/Supplier / Brand/${encodeURIComponent(originalSupplier)}${sheetParam}`, {
+            const response = await fetch(`${SHEETDB_API}/${encodedColumn}/${encodedValue}${sheetParam}`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json'
@@ -58,7 +65,14 @@ export default async function handler(req, res) {
             });
 
             const result = await response.json();
-            res.status(200).json(result);
+
+            // SheetDB returns { updated: 1 } on success
+            if (result.updated || result.data) {
+                res.status(200).json(result);
+            } else {
+                // Forward error if provided
+                res.status(400).json(result);
+            }
         }
         else {
             res.status(405).json({ error: 'Method not allowed' });

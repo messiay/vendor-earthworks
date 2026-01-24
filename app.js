@@ -538,6 +538,7 @@ async function saveVendor(event, index) {
             },
             body: JSON.stringify({
                 originalSupplier: originalSupplier,
+                originalRow: vendor._original,
                 updateData: updateData,
                 sheetName: sheetName
             })

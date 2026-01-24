@@ -39,20 +39,44 @@ export default async function handler(req, res) {
         }
         else if (req.method === 'PATCH') {
             // Update a specific vendor
-            const { originalSupplier, updateData, sheetName } = req.body;
+            const { originalRow, updateData, sheetName } = req.body;
 
-            if (!originalSupplier || !updateData) {
+            if (!updateData) {
                 return res.status(400).json({ error: 'Missing required data' });
             }
 
             // Default to Sheet1 if not specified
             const sheet = sheetName || 'Sheet1';
 
-            // Use Query Parameter based update to handle special characters in column names
-            // URL: /api/v1/{id}?sheet=Sheet1&Supplier%20%2F%20Brand=Value
-            const searchParam = `${encodeURIComponent('Supplier / Brand')}=${encodeURIComponent(originalSupplier)}`;
+            // Build search query from SAFE columns (no slashes) to identify the row
+            // We can't use "Supplier / Brand" because of the slash.
+            // We use a combination of other fields to effectively find the row.
+            const safeColumns = [
+                'Product Portfolio',
+                'GSM',
+                'Food Dishes Best Suited',
+                'Indicative Price Range',
+                'MOQ'
+            ];
+
+            let queryParts = [];
+            if (originalRow) {
+                for (const col of safeColumns) {
+                    // Only use if value exists and is reasonably short (to avoid huge URLs)
+                    if (originalRow[col] && typeof originalRow[col] === 'string' && originalRow[col].length < 100) {
+                        queryParts.push(`${encodeURIComponent(col)}=${encodeURIComponent(originalRow[col])}`);
+                    }
+                }
+            }
+
+            if (queryParts.length === 0) {
+                return res.status(400).json({ error: 'Cannot identify row: No safe columns found in original data.' });
+            }
+
+            const searchParam = queryParts.join('&');
 
             // Proxy the update to SheetDB
+            // URL: /api/v1/{id}?sheet=Sheet1&Product=...&GSM=...
             const response = await fetch(`${SHEETDB_API}?sheet=${sheet}&${searchParam}`, {
                 method: 'PATCH',
                 headers: {
@@ -68,7 +92,12 @@ export default async function handler(req, res) {
                 res.status(200).json(result);
             } else {
                 // Forward error if provided
-                res.status(400).json(result);
+                // If 0 updated, it might mean the row wasn't found (mismatch)
+                if (result.updated === 0) {
+                    res.status(404).json({ error: 'Row not found. Data might have changed.' });
+                } else {
+                    res.status(400).json(result);
+                }
             }
         }
         else {
